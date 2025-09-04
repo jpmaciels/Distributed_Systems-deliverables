@@ -6,23 +6,19 @@ consumidores/assinantes (subscribers) as recebem.
 """
 import pika
 
-connection = pika.BlockingConnection(
-    pika.ConnectionParameters(host='localhost'))
-channel = connection.channel()
+def connect_to_rabbitmq():
+    connection = pika.BlockingConnection(pika.ConnectionParameters(host='localhost'))
+    channel = connection.channel()
+    return connection, channel
 
-channel.exchange_declare(exchange='logs', exchange_type='direct')
+def declare_exchanges():
+    connection, channel = connect_to_rabbitmq()
+    channel.exchange_declare(exchange='auction_fanout_exchange', exchange_type='fanout')
+    channel.exchange_declare(exchange='direct_exchange', exchange_type='direct')
+    connection.close()
 
-result = channel.queue_declare(queue='', exclusive=True)
-queue_name = result.method.queue
+def main():
+    declare_exchanges()
 
-channel.queue_bind(exchange='logs', queue=queue_name)
-
-print(' [*] Waiting for logs. To exit press CTRL+C')
-
-def callback(ch, method, properties, body):
-    print(f" [x] {body}")
-
-channel.basic_consume(
-    queue=queue_name, on_message_callback=callback, auto_ack=True)
-
-channel.start_consuming()
+if __name__ == "__main__":
+    main()
