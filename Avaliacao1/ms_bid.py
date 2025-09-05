@@ -21,7 +21,7 @@ import pika
 import json
 from loguru import logger
 from typing import List
-
+# import pycryptodome
 
 connection = pika.BlockingConnection(pika.ConnectionParameters(host='localhost'))
 channel = connection.channel()
@@ -40,48 +40,101 @@ class Auction:
 
 auctions: List[Auction] = []
 
+def handle_auction_started(body):
+    logger.info("Received auction started event")
+    auction_data = json.loads(body)
+
+    auction = Auction(
+        auction_id=auction_data['id'],
+        description=auction_data['description'],
+        start_time=auction_data['start_time'],
+        end_time=auction_data['end_time'],
+        status=auction_data['status']
+    )
+
+    auctions.append(auction)
+    logger.info(f"Auction created: {auction.auction_id} - {auction.description}")
+
+def accept_bid(bid: dict, auction: Auction):
+    auction.bids.append(bid)
+    auction.highest_bid = bid['bid_amount']
+    auction.highest_bidder = bid['user_id']
+    logger.info(f"Bid accepted: Auction ID {auction.auction_id}, User ID {bid['user_id']}, Amount {bid['bid_amount']}")
+
+def handle_bid_placed(body):
+    logger.info("Received bid placed event")
+    bid_data = json.loads(body)
+    # body: {"auction_id": "123", "user_id": "456", "bid_amount": 100.0, "signature": "abc123"}
+
+    # TODO: Only accepts if the signature is valid;
+
+
+    if bid_data['auction_id'] not in [a.auction_id for a in auctions]:
+        logger.warning(f"Auction ID {bid_data['auction_id']} does not exist. Client {bid_data['user_id']} bid rejected.")
+        return
+    
+    auction = next(a for a in auctions if a.auction_id == bid_data['auction_id'])
+
+    if auction.status != 'active':
+        logger.warning(f"Auction ID {bid_data['auction_id']} is not active. Client {bid_data['user_id']} bid rejected.")
+        return
+    
+    if bid_data['bid_amount'] <= auction.highest_bid:
+        logger.warning(f"Bid amount {bid_data['bid_amount']} is not higher than current highest bid {auction.highest_bid}. Client {bid_data['user_id']} bid rejected.")
+        return
+    
+    accept_bid(bid_data, auction)
+
+    channel.basic_publish(
+        exchange='direct_exchange',
+        routing_key='bid_validated',
+        body=json.dumps(bid_data)
+    )
+
+
+def handle_auction_ended(body):
+    logger.info("Received auction ended event")
+    auction_data = json.loads(body)
+    # body: {"id": "123", "description": "Auction for item X", "start_time": "2023-10-01T10:00:00Z", "end_time": "2023-10-01T12:00:00Z", "status": "ended"}
+
+    auction = next((a for a in auctions if a.auction_id == auction_data['id']), None)
+    if not auction:
+        logger.warning(f"Auction ID {auction_data['id']} not found.")
+        return
+
+    auction.status = 'ended'
+    logger.info(f"Auction ended: {auction.auction_id}. Winner: {auction.highest_bidder} with bid {auction.highest_bid}")
+
+    # TODO
+    # publish to 'auction_winner' with the auction id, winner user id and winning bid amount.
+    channel.basic_publish(
+        exchange='direct_exchange',
+        routing_key='auction_winner',
+        body=json.dumps({
+            "auction_id": auction.auction_id,
+            "winner_user_id": auction.highest_bidder,
+            "winning_bid_amount": auction.highest_bid
+        })
+    )
+
 def callback(ch, method, properties, body):
     logger.info(f"Received in routing key {method.routing_key}: \n\t\t{body}")
 
-    if method.routing_key == '':
-        # Fanout - auction started
-        logger.info("Received auction started event")
-        auction_data = json.loads(body)
+    logger.debug(f"\n\nch: {ch}\nmethod: {method}\nproperties: {properties}\nbody: {body}\n\n")
 
-        auction = Auction(
-            auction_id=auction_data['id'],
-            description=auction_data['description'],
-            start_time=auction_data['start_time'],
-            end_time=auction_data['end_time'],
-            status=auction_data['status']
-        )
-
-        auctions.append(auction)
-        logger.info(f"Auction created: {auction.auction_id} - {auction.description}")
+    if method.exchange == 'auction_fanout_exchange':
+        handle_auction_started(body)
 
     elif method.routing_key == 'bid_placed':
-        logger.info("Received bid placed event")
-        # body: {"auction_id": "123", "user_id": "456", "bid_amount": 100.0, "signature": "abc123"}
-
-        # TODO
-        # Only accepts if:
-        # The signature is valid;
-        # The auction ID exists and the auction is active;
-        # The bid is higher than the last registered bid;
-
-        # Publish to 'bid_validated' if valid
+        handle_bid_placed(body)
 
     elif method.routing_key == 'auction_ended':
-        logger.info("Received auction ended event")
-        # body: {"id": "123", "description": "Auction for item X", "start_time": "2023-10-01T10:00:00Z", "end_time": "2023-10-01T12:00:00Z", "status": "ended"}
-        
-        # TODO
-        # publish to 'auction_winner' with the auction id, winner user id and winning bid amount.
+        handle_auction_ended(body)
 
     body_str = body.decode('utf-8')
     body_dict = json.loads(body_str)
 
-    logger.info(f"Auction id: {body_dict.get('id')} \n description: {body_dict.get('description')} \n start_time: {body_dict.get('start_time')} \n end_time: {body_dict.get('end_time')} \n status: {body_dict.get('status')}")
+    logger.info(f"\nAuction id: {body_dict.get('id')} \n description: {body_dict.get('description')} \n start_time: {body_dict.get('start_time')} \n end_time: {body_dict.get('end_time')} \n status: {body_dict.get('status')}")
 
 def main():
 
