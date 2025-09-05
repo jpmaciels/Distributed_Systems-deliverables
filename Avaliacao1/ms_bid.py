@@ -67,8 +67,6 @@ def handle_bid_placed(body):
     # body: {"auction_id": "123", "user_id": "456", "bid_amount": 100.0, "signature": "abc123"}
 
     # TODO: Only accepts if the signature is valid;
-
-
     if bid_data['auction_id'] not in [a.auction_id for a in auctions]:
         logger.warning(f"Auction ID {bid_data['auction_id']} does not exist. Client {bid_data['user_id']} bid rejected.")
         return
@@ -105,8 +103,6 @@ def handle_auction_ended(body):
     auction.status = 'ended'
     logger.info(f"Auction ended: {auction.auction_id}. Winner: {auction.highest_bidder} with bid {auction.highest_bid}")
 
-    # TODO
-    # publish to 'auction_winner' with the auction id, winner user id and winning bid amount.
     channel.basic_publish(
         exchange='direct_exchange',
         routing_key='auction_winner',
@@ -130,11 +126,6 @@ def callback(ch, method, properties, body):
 
     elif method.routing_key == 'auction_ended':
         handle_auction_ended(body)
-
-    body_str = body.decode('utf-8')
-    body_dict = json.loads(body_str)
-
-    logger.info(f"\nAuction id: {body_dict.get('id')} \n description: {body_dict.get('description')} \n start_time: {body_dict.get('start_time')} \n end_time: {body_dict.get('end_time')} \n status: {body_dict.get('status')}")
 
 def main():
 
