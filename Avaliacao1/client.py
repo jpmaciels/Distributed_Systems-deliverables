@@ -21,6 +21,7 @@ from Crypto.PublicKey import RSA
 from Crypto.Signature import pkcs1_15
 from Crypto.Hash import SHA256
 import base64
+import os
 
 #unique client id
 CLIENT_ID = f"client_{uuid.uuid4().hex[:6]}"
@@ -33,11 +34,9 @@ subscribed_auctions = set()
 lock = threading.Lock() 
 
 def sign_message(message: dict) -> str:
-    #signs the message with the key
-    message_bytes = json.dumps(message, sort_keys=True).encode('utf-8')
+    message_bytes = json.dumps(message, separators=(',', ':'), sort_keys=True).encode('utf-8')
     message_hash = SHA256.new(message_bytes)
     signature = pkcs1_15.new(private_key).sign(message_hash)
-
     return base64.b64encode(signature).decode('utf-8')
 
 def message_listener():
@@ -107,7 +106,11 @@ def message_listener():
 
 def main():
     logger.info(f"Client started with ID: {CLIENT_ID}")
-    
+
+    with open(f"keys/{CLIENT_ID}_public.pem", "wb") as f:       
+        f.write(public_key.export_key('PEM'))
+        logger.info(f"Public key saved to keys/{CLIENT_ID}_public.pem")
+
     listener_thread = threading.Thread(target=message_listener, daemon=True)
     listener_thread.start()
 
@@ -166,6 +169,13 @@ def main():
         if 'connection' in locals() and connection.is_open:
             connection.close()
         logger.info("Client shut down.")
+
+        #delete public key file on exit
+        try:
+            os.remove(f"keys/{CLIENT_ID}_public.pem")
+            logger.info(f"Public key file keys/{CLIENT_ID}_public.pem deleted.")
+        except OSError as e:
+            logger.error(f"Error deleting public key file: {e}")
 
 
 if __name__ == "__main__":

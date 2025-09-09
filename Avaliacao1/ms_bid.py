@@ -21,7 +21,10 @@ import pika
 import json
 from loguru import logger
 from typing import List
-# import pycryptodome
+from Crypto.PublicKey import RSA
+from Crypto.Signature import pkcs1_15
+from Crypto.Hash import SHA256
+import base64
 
 connection = pika.BlockingConnection(pika.ConnectionParameters(host='localhost'))
 channel = connection.channel()
@@ -66,7 +69,37 @@ def handle_bid_placed(body):
     bid_data = json.loads(body)
     # body: {"auction_id": "123", "user_id": "456", "bid_amount": 100.0, "signature": "abc123"}
 
-    # TODO: Only accepts if the signature is valid;
+    # Only accepts if the signature is valid;
+    # All clients public keys are stored in the 'keys' folder as {user_id}_public.pem
+
+    try:
+        with open(f"keys/{bid_data['user_id']}_public.pem", "rb") as f:
+            public_key = RSA.import_key(f.read())
+    except FileNotFoundError:
+        logger.warning(f"Public key for user {bid_data['user_id']} not found. Bid rejected.")
+        return
+    except(ValueError, IndexError, TypeError) as e:
+        logger.warning(f"Error loading public key for user {bid_data['user_id']}: {e}. Bid rejected.")
+        return
+    
+    sig_b64 = bid_data.pop('signature')
+    try:
+        signature = base64.b64decode(sig_b64)
+    except (base64.binascii.Error, ValueError) as e:
+        logger.warning(f"Invalid base64 signature for user {bid_data['user_id']}: {e}. Bid rejected.")
+        return
+    
+    signed_dict = {k: v for k, v in bid_data.items() if k != 'signature'}
+    message = json.dumps(signed_dict, separators=(',', ':'), sort_keys=True).encode('utf-8')
+    h = SHA256.new(message)
+
+    try:
+        pkcs1_15.new(public_key).verify(h, signature)
+        logger.info(f"Signature verified for user {bid_data['user_id']}.")
+    except (ValueError, TypeError):
+        logger.warning(f"Invalid signature for user {bid_data['user_id']}. Bid rejected.")
+        return
+
     if bid_data['auction_id'] not in [a.auction_id for a in auctions]:
         logger.warning(f"Auction ID {bid_data['auction_id']} does not exist. Client {bid_data['user_id']} bid rejected.")
         return
