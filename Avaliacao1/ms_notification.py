@@ -68,7 +68,7 @@ def main():
     channel.queue_bind(exchange='direct_exchange', queue='ms_notification_queue', routing_key='auction_winner')
 
     channel.basic_consume(
-        queue='ms_bid_queue', on_message_callback=callback, auto_ack=True)
+        queue='ms_notification_queue', on_message_callback=callback, auto_ack=True)
 
     logger.info(' [*] Waiting for messages. To exit press CTRL+C')
     channel.start_consuming()

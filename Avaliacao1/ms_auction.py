@@ -22,15 +22,15 @@ auctions = [
     {
         "id": "leilao1",
         "description": "chocovo",
-        "start_time": datetime.now() + timedelta(seconds=5),
-        "end_time": datetime.now() + timedelta(seconds=20),
+        "start_time": datetime.now() + timedelta(seconds=10),
+        "end_time": datetime.now() + timedelta(seconds=90),
         "status": "active"
     },
     {
         "id": "leilao2",
         "description": "chocopizza nachos",
-        "start_time": datetime.now() + timedelta(seconds=10),
-        "end_time": datetime.now() + timedelta(seconds=30),
+        "start_time": datetime.now() + timedelta(seconds=25),
+        "end_time": datetime.now() + timedelta(seconds=130),
         "status": "active"
     }
 ]
